@@ -159,6 +159,30 @@ class GPTModel(nn.Module):
         self.final_layer_norm = LayerNorm(cfg.embedding_dim)
         self.out_head = nn.Linear(cfg.embedding_dim, cfg.vocab_size, bias=False)
 
+    def __repr__(self):
+        def _compact_module_list(name, module_list, indent=2):
+            child = module_list[0]
+            child_str = repr(child)
+            indent_str = " " * indent
+            lines = child_str.split("\n")[1:-1]
+            child_str = "\n".join(indent_str * 2 + line for line in lines)
+
+            return (
+                f"{indent_str}({name}): {module_list.__class__.__name__}(\n"
+                f"{indent_str * 2}(0-{len(module_list) - 1}): {len(module_list)} x {child.__class__.__name__}(\n"
+                f"{child_str}\n"
+                f"{indent_str * 2})\n"
+                f"{indent_str})"
+            )
+
+        lines = []
+        for name, module in self.named_children():
+            if isinstance(module, (nn.Sequential, nn.ModuleList)):
+                lines.append(_compact_module_list(name, module))
+            else:
+                lines.append(f"  ({name}): {module}")
+        return f"{self.__class__.__name__}(\n" + "\n".join(lines) + "\n)"
+
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len = input_ids.size()
         token_embeddings = self.token_embedding(input_ids)
