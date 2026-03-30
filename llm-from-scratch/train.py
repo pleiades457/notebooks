@@ -1,10 +1,14 @@
 import torch
 import torch.nn as nn
-from gpt import generate_text
+from gpt import GPTModel, generate_text
+from tiktoken import Encoding
+from torch.utils.data import DataLoader
 from utils import text_to_tokens, tokens_to_text
 
 
-def generate_text_and_print(model, tokenizer, start_context, max_length=50):
+def generate_text_and_print(
+    model: GPTModel, tokenizer: Encoding, start_context: str, max_length: int = 50
+) -> None:
     model.eval()
     context_length = model.pos_embedding.weight.shape[0]
     device = next(model.parameters()).device
@@ -22,16 +26,16 @@ def generate_text_and_print(model, tokenizer, start_context, max_length=50):
 
 
 def train_model(
-    model,
-    train_dataloader,
-    valid_dataloader,
-    optimizer,
-    num_epochs,
-    eval_freq,
-    eval_iter,
-    tokenizer,
-    start_context,
-):
+    model: GPTModel,
+    train_dataloader: DataLoader,
+    valid_dataloader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    num_epochs: int,
+    eval_freq: int,
+    eval_iter: int,
+    tokenizer: Encoding,
+    start_context: str,
+) -> tuple[list[float], list[float], list[int]]:
     train_losses, valid_losses, track_tokens_seen = [], [], []
     step, tokens_seen = 0, 0
 
@@ -64,7 +68,9 @@ def train_model(
     return train_losses, valid_losses, track_tokens_seen
 
 
-def calc_loss_batch(input_batch, target_batch, model) -> torch.Tensor:
+def calc_loss_batch(
+    input_batch: torch.Tensor, target_batch: torch.Tensor, model: GPTModel
+) -> torch.Tensor:
     device = next(model.parameters()).device
     input_batch = input_batch.to(device)
     target_batch = target_batch.to(device)
@@ -76,7 +82,9 @@ def calc_loss_batch(input_batch, target_batch, model) -> torch.Tensor:
     return loss
 
 
-def calc_loss_dataloader(dataloader, model, num_batches=None) -> float:
+def calc_loss_dataloader(
+    dataloader: DataLoader, model: GPTModel, num_batches: int | None = None
+) -> float:
     total_loss = 0.0
     if len(dataloader) == 0:
         return float("nan")
@@ -94,7 +102,10 @@ def calc_loss_dataloader(dataloader, model, num_batches=None) -> float:
 
 
 def evaluate_model(
-    model, train_dataloader, valid_dataloader, eval_iter
+    model: GPTModel,
+    train_dataloader: DataLoader,
+    valid_dataloader: DataLoader,
+    eval_iter: int,
 ) -> tuple[float, float]:
     model.eval()
     with torch.no_grad():

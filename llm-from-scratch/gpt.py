@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field, fields
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -33,8 +34,13 @@ class GPTConfig:
 
 class MultiHeadAttention(nn.Module):
     def __init__(
-        self, embedding_dim, num_heads, context_length, dropout=0.0, qkv_bias=False
-    ):
+        self,
+        embedding_dim: int,
+        num_heads: int,
+        context_length: int,
+        dropout: float = 0.0,
+        qkv_bias: bool = False,
+    ) -> None:
         super().__init__()
         assert embedding_dim % num_heads == 0, (
             "embedding_dim must be divisible by num_heads"
@@ -51,7 +57,7 @@ class MultiHeadAttention(nn.Module):
             "mask", torch.triu(torch.ones(context_length, context_length), diagonal=1)
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, _ = x.shape
 
         # compute q, k, v in one go and then split them
@@ -80,7 +86,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class GELU(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -98,7 +104,7 @@ class GELU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, embedding_dim: int):
+    def __init__(self, embedding_dim: int) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(embedding_dim, 4 * embedding_dim),
@@ -111,7 +117,7 @@ class FeedForward(nn.Module):
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, embedding_dim: int, eps: float = 1e-5):
+    def __init__(self, embedding_dim: int, eps: float = 1e-5) -> None:
         super().__init__()
         self.eps = eps  # prevent division by zero
         self.scale = nn.Parameter(torch.ones(embedding_dim))
@@ -125,7 +131,7 @@ class LayerNorm(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, cfg: GPTConfig):
+    def __init__(self, cfg: GPTConfig) -> None:
         super().__init__()
         self.attention = MultiHeadAttention(
             embedding_dim=cfg.embedding_dim,
@@ -147,7 +153,7 @@ class TransformerBlock(nn.Module):
 
 
 class GPTModel(nn.Module):
-    def __init__(self, cfg: GPTConfig):
+    def __init__(self, cfg: GPTConfig) -> None:
         super().__init__()
         self.token_embedding = nn.Embedding(cfg.vocab_size, cfg.embedding_dim)
         self.pos_embedding = nn.Embedding(cfg.context_length, cfg.embedding_dim)
@@ -159,8 +165,8 @@ class GPTModel(nn.Module):
         self.final_layer_norm = LayerNorm(cfg.embedding_dim)
         self.out_head = nn.Linear(cfg.embedding_dim, cfg.vocab_size, bias=False)
 
-    def __repr__(self):
-        def _compact_module_list(name, module_list, indent=2):
+    def __repr__(self) -> str:
+        def _compact_module_list(name: str, module_list: Any, indent: int = 2) -> str:
             child = module_list[0]
             child_str = repr(child)
             indent_str = " " * indent
