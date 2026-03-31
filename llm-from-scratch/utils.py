@@ -2,6 +2,7 @@ from typing import Any
 
 import tiktoken
 import torch
+from gpt import GPTModel
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -97,3 +98,94 @@ def load_checkpoint(
     if optimizer is not None and checkpoint.get("optimizer_state_dict") is not None:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     return checkpoint
+
+
+def load_hf_gpt2_params() -> tuple[Any, dict[str, Any]]:
+    """Load GPT-2 params from HuggingFace. Returns the model config and a dict of params."""
+    from transformers import GPT2Model
+
+    model = GPT2Model.from_pretrained("gpt2")
+    hf_sd = model.state_dict()
+    params: dict[str, Any] = {
+        "wte": hf_sd["wte.weight"].numpy(),
+        "wpe": hf_sd["wpe.weight"].numpy(),
+        "g": hf_sd["ln_f.weight"].numpy(),
+        "b": hf_sd["ln_f.bias"].numpy(),
+        "blocks": [],
+    }
+
+    for i in range(model.config.n_layer):
+        block = {
+            "attn": {
+                "c_attn": {
+                    "w": hf_sd[f"h.{i}.attn.c_attn.weight"].numpy(),
+                    "b": hf_sd[f"h.{i}.attn.c_attn.bias"].numpy(),
+                },
+                "c_proj": {
+                    "w": hf_sd[f"h.{i}.attn.c_proj.weight"].numpy(),
+                    "b": hf_sd[f"h.{i}.attn.c_proj.bias"].numpy(),
+                },
+            },
+            "mlp": {
+                "c_fc": {
+                    "w": hf_sd[f"h.{i}.mlp.c_fc.weight"].numpy(),
+                    "b": hf_sd[f"h.{i}.mlp.c_fc.bias"].numpy(),
+                },
+                "c_proj": {
+                    "w": hf_sd[f"h.{i}.mlp.c_proj.weight"].numpy(),
+                    "b": hf_sd[f"h.{i}.mlp.c_proj.bias"].numpy(),
+                },
+            },
+            "ln_1": {
+                "g": hf_sd[f"h.{i}.ln_1.weight"].numpy(),
+                "b": hf_sd[f"h.{i}.ln_1.bias"].numpy(),
+            },
+            "ln_2": {
+                "g": hf_sd[f"h.{i}.ln_2.weight"].numpy(),
+                "b": hf_sd[f"h.{i}.ln_2.bias"].numpy(),
+            },
+        }
+        params["blocks"].append(block)
+
+    return model.config, params
+
+
+def _assign(left: torch.Tensor, right: Any) -> torch.nn.Parameter:
+    if left.shape != right.shape:
+        raise ValueError(f"Shape mismatch. Left: {left.shape}, Right: {right.shape}")
+    return torch.nn.Parameter(torch.as_tensor(right))
+
+
+def load_weights_into_gpt(gpt: GPTModel, params: dict[str, Any]) -> None:
+    gpt.pos_embedding.weight = _assign(gpt.pos_embedding.weight, params["wpe"])
+    gpt.token_embedding.weight = _assign(gpt.token_embedding.weight, params["wte"])
+
+    for i, blk in enumerate(params["blocks"]):
+        tb = gpt.transformer_blocks[i]
+
+        tb.attention.qkv.weight = _assign(
+            tb.attention.qkv.weight, blk["attn"]["c_attn"]["w"].T
+        )
+        tb.attention.qkv.bias = _assign(
+            tb.attention.qkv.bias, blk["attn"]["c_attn"]["b"]
+        )
+        tb.attention.out_proj.weight = _assign(
+            tb.attention.out_proj.weight, blk["attn"]["c_proj"]["w"].T
+        )
+        tb.attention.out_proj.bias = _assign(
+            tb.attention.out_proj.bias, blk["attn"]["c_proj"]["b"]
+        )
+
+        tb.ff.net[0].weight = _assign(tb.ff.net[0].weight, blk["mlp"]["c_fc"]["w"].T)
+        tb.ff.net[0].bias = _assign(tb.ff.net[0].bias, blk["mlp"]["c_fc"]["b"])
+        tb.ff.net[2].weight = _assign(tb.ff.net[2].weight, blk["mlp"]["c_proj"]["w"].T)
+        tb.ff.net[2].bias = _assign(tb.ff.net[2].bias, blk["mlp"]["c_proj"]["b"])
+
+        tb.ln1.scale = _assign(tb.ln1.scale, blk["ln_1"]["g"])
+        tb.ln1.shift = _assign(tb.ln1.shift, blk["ln_1"]["b"])
+        tb.ln2.scale = _assign(tb.ln2.scale, blk["ln_2"]["g"])
+        tb.ln2.shift = _assign(tb.ln2.shift, blk["ln_2"]["b"])
+
+    gpt.final_layer_norm.scale = _assign(gpt.final_layer_norm.scale, params["g"])
+    gpt.final_layer_norm.shift = _assign(gpt.final_layer_norm.shift, params["b"])
+    gpt.out_head.weight = _assign(gpt.out_head.weight, params["wte"])
