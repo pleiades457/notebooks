@@ -52,7 +52,7 @@ def train_model(
             step += 1
             tokens_seen += input_batch.numel()
 
-            if step % eval_freq == 0:
+            if step == 1 or step % eval_freq == 0:
                 train_loss, valid_loss = evaluate_model(
                     model, train_dataloader, valid_dataloader, eval_iter
                 )

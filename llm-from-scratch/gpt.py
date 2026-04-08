@@ -228,6 +228,7 @@ def generate(
     context_length: int,
     temperature: float = 0.0,
     top_k: int = 0,
+    eos_token_id: int | None = None,
 ):
     for _ in range(max_length):
         # ensure the input to the model does not exceed the context length
@@ -251,6 +252,9 @@ def generate(
             next_token_id = torch.multinomial(probs, num_samples=1)
         else:
             next_token_id = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+
+        if eos_token_id is not None and next_token_id.item() == eos_token_id:
+            break
 
         input_ids = torch.cat((input_ids, next_token_id), dim=1)
     return input_ids

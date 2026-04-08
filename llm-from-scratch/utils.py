@@ -100,11 +100,11 @@ def load_checkpoint(
     return checkpoint
 
 
-def load_hf_gpt2_params() -> tuple[Any, dict[str, Any]]:
+def load_hf_gpt2_params(model_name: str = "gpt2") -> tuple[Any, dict[str, Any]]:
     """Load GPT-2 params from HuggingFace. Returns the model config and a dict of params."""
     from transformers import GPT2Model
 
-    model = GPT2Model.from_pretrained("gpt2")
+    model = GPT2Model.from_pretrained(model_name)
     hf_sd = model.state_dict()
     params: dict[str, Any] = {
         "wte": hf_sd["wte.weight"].numpy(),
