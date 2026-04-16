@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 from gpt import GPTModel, generate_text
@@ -66,6 +68,76 @@ def train_model(
 
         generate_text_and_print(model, tokenizer, start_context)
     return train_losses, valid_losses, track_tokens_seen
+
+
+def train_model_2(
+    model: GPTModel,
+    train_dataloader: DataLoader,
+    valid_dataloader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    num_epochs: int,
+    eval_freq: int,
+    eval_iter: int,
+    tokenizer: Encoding,
+    start_context: str,
+    warmup_steps: int,
+    lr_init: float = 3e-5,
+    lr_min: float = 1e-6,
+) -> tuple[list[float], list[float], list[int], list[float]]:
+    """Train the model with a learning rate schedule that includes a linear warmup followed by cosine decay."""
+    train_losses, valid_losses, track_tokens_seen, track_lrs = [], [], [], []
+    step, tokens_seen = 0, 0
+
+    lr_max = optimizer.param_groups[0]["lr"]
+    total_training_steps = len(train_dataloader) * num_epochs
+    lr_incr = (lr_max - lr_init) / warmup_steps
+
+    for epoch in range(num_epochs):
+        model.train()
+        for input_batch, target_batch in train_dataloader:
+            # set gradients to zero before backward pass to avoid accumulation
+            optimizer.zero_grad()
+
+            # update learning rate according to the schedule
+            if step < warmup_steps:
+                lr = lr_init + step * lr_incr
+            else:
+                progress = (step - warmup_steps) / (total_training_steps - warmup_steps)
+                lr = lr_min + 0.5 * (lr_max - lr_min) * (
+                    1 + math.cos(math.pi * progress)
+                )
+
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = lr
+            track_lrs.append(lr)
+
+            loss = calc_loss_batch(input_batch, target_batch, model)
+            # compute gradients of loss w.r.t. model parameters
+            loss.backward()
+
+            # clip gradients to avoid exploding gradients
+            if step > warmup_steps:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+            # update parameters using the computed gradients
+            optimizer.step()
+            step += 1
+            tokens_seen += input_batch.numel()
+
+            if step == 1 or step % eval_freq == 0:
+                train_loss, valid_loss = evaluate_model(
+                    model, train_dataloader, valid_dataloader, eval_iter
+                )
+                train_losses.append(train_loss)
+                valid_losses.append(valid_loss)
+                track_tokens_seen.append(tokens_seen)
+
+                print(
+                    f"Epoch {epoch + 1}/{num_epochs}, Step {step}, Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}"
+                )
+
+        generate_text_and_print(model, tokenizer, start_context)
+    return train_losses, valid_losses, track_tokens_seen, track_lrs
 
 
 def calc_loss_batch(
